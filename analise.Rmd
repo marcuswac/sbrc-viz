@@ -1,0 +1,71 @@
+---
+title: "Hackaton"
+output: html_notebook
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(pdftools)
+library(purrr)
+library(SnowballC)
+library(stringr)
+library(tidytext)
+library(wordcloud)
+
+extract_abstract <- function(text, pattern1 = "Abstract.", pattern2 = "Resumo.",
+                             pattern3 = "\n1") {
+  abstract <- str_split(text, fixed(pattern1))[[1]][2]
+  abstract <- str_split(abstract, fixed(pattern2))[[1]][1]
+  abstract <- str_split(abstract, fixed(pattern3))[[1]][1]
+  
+  return(abstract)
+}
+```
+
+```{r}
+sbrc19 <- pdf_text("http://sbrc2019.sbc.org.br/wp-content/uploads/2019/05/sbrc2019.pdf")
+
+abstract <- map_chr(sbrc19, extract_abstract) %>%
+  na.exclude()
+
+abstract_words <- data_frame(paper = seq_along(abstract), text = abstract) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words, by = "word") %>%
+  count(paper, word, sort = TRUE)
+  
+total_words <- abstract_words %>% 
+  group_by(paper) %>% 
+  summarize(total = sum(n))
+
+word_count_all <- abstract_words %>%
+  group_by(word) %>%
+  summarise(total = sum(n))
+
+abstract_words <- left_join(abstract_words, total_words, by = "paper")
+abstract_words
+```
+
+```{r}
+freq_by_rank <- abstract_words %>% 
+  group_by(paper) %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = n/total)
+
+freq_by_rank
+```
+
+```{r}
+abstract_words <- abstract_words %>%
+  bind_tf_idf(word, paper, n)
+
+abstract_words %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+```
+
+```{r}
+wordcloud(word_count_all$word, word_count_all$total, min.freq = 1, max.words = 100,
+          random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
